@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>AI Robot Runner 3D | Varun AI Designs</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050817;font-family:Arial,sans-serif;touch-action:none}
+canvas{display:block;width:100vw;height:100vh}
+#hud{position:fixed;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;color:#9ff7ff;font-weight:800;font-size:clamp(14px,3.5vw,22px);text-shadow:0 0 10px #00d9ff;pointer-events:none}
+#brand{position:fixed;top:45px;left:0;right:0;text-align:center;color:#dffaff;font-size:12px;letter-spacing:3px;opacity:.8;pointer-events:none}
+#overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#020615a8;color:white;text-align:center;padding:24px}
+.panel{max-width:440px;border:1px solid #20dfff;border-radius:20px;padding:25px 22px;background:linear-gradient(145deg,#0a1a36ee,#10102bee);box-shadow:0 0 35px #00cfff55}
+h1{margin:0 0 8px;font-size:clamp(27px,7vw,42px);color:#7df5ff;text-shadow:0 0 18px #00bfff}
+p{line-height:1.5;color:#d7e9ff}.btn{border:0;border-radius:999px;background:linear-gradient(90deg,#00c8ff,#426dff);color:#001126;font-size:18px;font-weight:900;padding:14px 30px;margin-top:8px}
+#controls{position:fixed;bottom:18px;left:0;right:0;display:flex;justify-content:space-between;padding:0 20px;pointer-events:none}
+.ctrl{pointer-events:auto;width:76px;height:64px;border-radius:18px;border:1px solid #65eaff99;background:#071c38aa;color:#bafaff;font-size:26px;font-weight:bold}
+#hint{position:fixed;bottom:94px;left:0;right:0;text-align:center;color:#bdefff;font-size:12px;opacity:.75;pointer-events:none}
+</style>
+<link rel="manifest" href="./manifest.webmanifest"><meta name="theme-color" content="#06152b"></head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud"><span id="score">SCORE 00000</span><span id="coins">🪙 0</span></div>
+<div id="brand">VARUN AI DESIGNS</div>
+<div id="hint">SWIPE LEFT / RIGHT · TAP TO JUMP</div>
+<div id="controls"><button class="ctrl" id="left">◀</button><button class="ctrl" id="jump">⬆</button><button class="ctrl" id="right">▶</button></div>
+<div id="overlay"><div class="panel"><h1>AI ROBOT RUNNER</h1><p>A neon 3D-style endless runner.<br>Collect coins, dodge barriers and beat your high score.</p><p><b>Swipe</b> left/right to change lanes · <b>Tap</b> to jump</p><button class="btn" id="start">START GAME</button></div></div>
+<script>
+(()=> {
+const c=document.getElementById('game'),ctx=c.getContext('2d');
+let W,H,dpr,playing=false,over=false,score=0,coins=0,speed=0.42,playerLane=0,jump=0,jumpV=0,items=[],spawn=0,last=0,high=+(localStorage.robotRunnerHigh||0);
+const lanes=[-1,0,1];
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;c.width=W*dpr;c.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+function roadY(z){return H*.38+(z*z)*(H*.65)}
+function laneX(l,z){return W/2+l*(W*.105+z*W*.22)}
+function draw(){
+ctx.clearRect(0,0,W,H);
+let sky=ctx.createLinearGradient(0,0,0,H);sky.addColorStop(0,'#05091e');sky.addColorStop(.55,'#102b51');sky.addColorStop(1,'#071020');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+// distant neon skyline
+for(let i=0;i<16;i++){let x=(i*97+17)%W,b=H*.43-(i%4)*14;ctx.fillStyle=i%2?'#102b4b':'#142044';ctx.fillRect(x,b,30,H-b)}
+// road perspective
+ctx.beginPath();ctx.moveTo(W*.43,H*.38);ctx.lineTo(W*.57,H*.38);ctx.lineTo(W*1.03,H);ctx.lineTo(-W*.03,H);ctx.closePath();ctx.fillStyle='#101a30';ctx.fill();ctx.strokeStyle='#00dfff';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(W*.43,H*.38);ctx.lineTo(-W*.03,H);ctx.moveTo(W*.57,H*.38);ctx.lineTo(W*1.03,H);ctx.stroke();
+// lane dashed lines
+for(let lane of [-.5,.5]){for(let i=0;i<9;i++){let z=((i/9+((performance.now()/1000*speed)%1))%1),y=roadY(z),x=W/2+lane*(W*.105+z*W*.22),w=2+z*5;ctx.fillStyle='#00bfe8';ctx.fillRect(x-w/2,y,w,8+z*20)}}
+// stars
+for(let i=0;i<40;i++){let x=(i*173)%W,y=(i*71)%(H*.34);ctx.fillStyle='#8ceeff';ctx.globalAlpha=.25+(i%4)*.12;ctx.fillRect(x,y,2,2)}ctx.globalAlpha=1;
+}
+function robot(x,y,s){
+ctx.save();ctx.translate(x,y);ctx.scale(s,s);
+// shadow
+ctx.fillStyle='#0009';ctx.beginPath();ctx.ellipse(0,3,25,8,0,0,Math.PI*2);ctx.fill();
+// legs
+ctx.fillStyle='#536d89';ctx.fillRect(-17,-39,13,37);ctx.fillRect(4,-39,13,37);
+ctx.fillStyle='#9eb6c9';ctx.fillRect(-20,-8,19,8);ctx.fillRect(3,-8,19,8);
+// body
+let g=ctx.createLinearGradient(-22,-90,22,-35);g.addColorStop(0,'#e9f8ff');g.addColorStop(1,'#6f91ad');ctx.fillStyle=g;round(-22,-91,44,55,9);
+// chest light
+ctx.fillStyle='#00eaff';ctx.shadowColor='#00dfff';ctx.shadowBlur=13;ctx.fillRect(-10,-75,20,5);ctx.shadowBlur=0;
+// arms
+ctx.fillStyle='#8ca9bf';ctx.fillRect(-31,-86,10,40);ctx.fillRect(21,-86,10,40);
+// head
+ctx.fillStyle='#d9edf7';round(-21,-126,42,34,9);ctx.fillStyle='#04243e';round(-15,-116,30,13,5);ctx.fillStyle='#00f5ff';ctx.shadowColor='#00eaff';ctx.shadowBlur=10;ctx.fillRect(-10,-112,7,4);ctx.fillRect(4,-112,7,4);ctx.shadowBlur=0;
+ctx.restore();
+}
+function round(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill()}
+function drawItem(it){
+let z=it.z,scale=.16+z*.95,x=laneX(it.lane,z),y=roadY(z);
+if(it.type==='coin'){ctx.save();ctx.translate(x,y-28*scale);ctx.scale(scale,scale);ctx.fillStyle='#ffc928';ctx.shadowColor='#ffb000';ctx.shadowBlur=18;ctx.beginPath();ctx.arc(0,0,13,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#fff2a0';ctx.lineWidth=3;ctx.stroke();ctx.fillStyle='#8b5100';ctx.font='bold 15px Arial';ctx.textAlign='center';ctx.fillText('$',0,5);ctx.restore()}
+else{ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.fillStyle='#ff3d51';ctx.shadowColor='#ff1744';ctx.shadowBlur=16;ctx.beginPath();ctx.roundRect(-25,-45,50,45,7);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='#ffb0b8';ctx.fillRect(-16,-35,32,5);ctx.restore()}
+}
+function update(dt){
+if(!playing)return;
+score+=dt*12;speed=Math.min(.78,.42+score/5000);
+spawn-=dt;if(spawn<=0){let lane=lanes[Math.floor(Math.random()*3)];items.push({type:Math.random()<.42?'coin':'block',lane,z:0});if(Math.random()<.25)items.push({type:'coin',lane,z:-.18});spawn=Math.max(.48,1.15-score/6000)}
+if(jump>0){jump+=jumpV*dt;jumpV-=2.5*dt;if(jump<=0){jump=0;jumpV=0}}
+for(let it of items){it.z+=dt*speed;if(it.z>.78&&it.z<.94&&it.lane===playerLane){if(it.type==='coin'){coins++;it.z=2}else if(jump<.18){endGame()}}}
+items=items.filter(i=>i.z<1.1);
+document.getElementById('score').textContent='SCORE '+String(Math.floor(score)).padStart(5,'0');document.getElementById('coins').textContent='🪙 '+coins;
+}
+function render(){draw();items.slice().sort((a,b)=>a.z-b.z).forEach(drawItem);let x=laneX(playerLane,.9),y=roadY(.9)-jump*H*.45;robot(x,y,.85);if(playing)requestAnimationFrame(loop)}
+function loop(t){let dt=Math.min((t-last)/1000,.04);last=t;update(dt);render()}
+function start(){score=0;coins=0;speed=.42;playerLane=0;jump=0;jumpV=0;items=[];spawn=.5;over=false;playing=true;document.getElementById('overlay').style.display='none';last=performance.now();requestAnimationFrame(loop)}
+function endGame(){if(!playing)return;playing=false;over=true;high=Math.max(high,Math.floor(score));localStorage.robotRunnerHigh=high;document.querySelector('.panel').innerHTML=`<h1>GAME OVER</h1><p>Score: <b>${Math.floor(score)}</b><br>Coins: <b>${coins}</b><br>Best: <b>${high}</b></p><button class="btn" id="again">PLAY AGAIN</button>`;document.getElementById('overlay').style.display='flex';document.getElementById('again').onclick=start}
+function move(n){if(playing)playerLane=Math.max(-1,Math.min(1,playerLane+n))}
+function doJump(){if(playing&&jump===0){jump=.01;jumpV=1.25}}
+document.getElementById('start').onclick=start;
+document.getElementById('left').onpointerdown=e=>{e.preventDefault();move(-1)};
+document.getElementById('right').onpointerdown=e=>{e.preventDefault();move(1)};
+document.getElementById('jump').onpointerdown=e=>{e.preventDefault();doJump()};
+let sx=0,sy=0;c.addEventListener('pointerdown',e=>{sx=e.clientX;sy=e.clientY});
+c.addEventListener('pointerup',e=>{let dx=e.clientX-sx,dy=e.clientY-sy;if(Math.abs(dx)>35)move(dx>0?1:-1);else if(Math.abs(dy)>35&&dy<0)doJump();else doJump()});
+addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='a')move(-1);if(e.key==='ArrowRight'||e.key==='d')move(1);if(e.key===' '||e.key==='ArrowUp')doJump()});
+render();
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.error));
+}
+</script></body>
+</html>
